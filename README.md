@@ -16,17 +16,17 @@ A Bun-based anonymous HTTP/HTTPS proxy server that provides secure and flexible 
 
 ## Installation
 
-1. Clone the repository:
+1. Install bun environment into your home dir (if needed):
+   ```bash
+   curl -fsSL https://bun.sh/install | bash
+   ```
+
+2. Clone the repository:
    ```bash
    git clone <repository-url>
    cd deus-proxy-server-ts
    ```
 
-2. Install dependencies (if any):
-   ```bash
-   curl -fsSL https://bun.sh/install | bash
-   npm install
-   ```
 
 ## Configuration
 
