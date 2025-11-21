@@ -58,6 +58,7 @@ The proxy server will start on the configured port and only accept connections f
 For production deployment, use PM2 to manage the proxy server.
 
 1. Create ecosystem.config.js:
+   
    ```
    // ecosystem.config.js
    module.exports = {
@@ -68,7 +69,7 @@ For production deployment, use PM2 to manage the proxy server.
        interpreter_args: 'run',
        exec_mode: 'fork',
        instances: 1,
-       autorestart: false,
+       autorestart: true,
        watch: false,
        env: {
          NODE_ENV: 'production',
@@ -78,11 +79,15 @@ For production deployment, use PM2 to manage the proxy server.
      }]
    };
    ```
-2. Start the proxy server with PM2 using custom ecosystem file:
+   
+3. Start the proxy server with PM2 using custom ecosystem file:
+   
    ```
    pm2 start ecosystem.config.js
    ```
-3. Manage your proxy server using:
+   
+5. Manage your proxy server using:
+   
    ```
    # View process status
    pm2 status
