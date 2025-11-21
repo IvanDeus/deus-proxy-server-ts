@@ -27,7 +27,6 @@ A Bun-based anonymous HTTP/HTTPS proxy server that provides secure and flexible 
    cd deus-proxy-server-ts
    ```
 
-
 ## Configuration
 
 Create a `.env` file in the root directory with the following variables. Choose proxy server port and allowed IPs to access proxy:
@@ -56,14 +55,32 @@ bun run proxy.ts
 The proxy server will start on the configured port and only accept connections from the specified allowed IP addresses.
 
 ## Production Mode with PM2
-For production deployment, use PM2 to manage the proxy server:
+For production deployment, use PM2 to manage the proxy server.
 
+Create ecosystem.config.js:
 ```
-# Start the proxy server with PM2
-pm2 start proxy.js --name "deus-proxy"
-
-# Start with specific environment file
-pm2 start proxy.js --name "deus-proxy" --env production
+// ecosystem.config.js
+module.exports = {
+  apps: [{
+    name: 'deus-proxy',
+    script: '/var/proxy.ts',
+    interpreter: '/home/.bun/bin/bun',
+    interpreter_args: 'run',
+    exec_mode: 'fork',
+    instances: 1,
+    autorestart: false,
+    watch: false,
+    env: {
+      NODE_ENV: 'production',
+      PORT: 33000,
+      ALLOWED_IPS: '5.7.7.7'
+    }
+  }]
+};
+```
+Start the proxy server with PM2 using custom ecosystem file:
+```
+pm2 start ecosystem.config.js
 
 # View process status
 pm2 status
