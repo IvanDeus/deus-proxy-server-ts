@@ -98,11 +98,12 @@ For production deployment, use PM2 to manage the proxy server.
    # Stop the proxy server
    pm2 stop deus-proxy
    
+   # Start the proxy server
+   pm2 start deus-proxy   
+
    # Restart the proxy server
    pm2 restart deus-proxy
    
-   # Delete the proxy server from PM2
-   pm2 delete deus-proxy
    ```
 ## PM2 Process Management
 ```
