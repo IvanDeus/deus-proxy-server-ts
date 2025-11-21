@@ -24,6 +24,7 @@ A Bun-based anonymous HTTP/HTTPS proxy server that provides secure and flexible 
 
 2. Install dependencies (if any):
    ```bash
+   curl -fsSL https://bun.sh/install | bash
    npm install
    ```
 
@@ -49,7 +50,7 @@ ALLOWED_IPS=52.167.144.238,52.167.144.*,192.168.1.*,10.0.0.0/24
 Start the proxy server:
 
 ```bash
-node proxy.js
+bun run proxy.js
 ```
 
 The proxy server will start on the configured port and only accept connections from the specified allowed IP addresses.
