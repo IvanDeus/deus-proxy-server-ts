@@ -50,7 +50,7 @@ ALLOWED_IPS=52.167.144.238,52.167.144.*,192.168.1.*,10.0.0.0/24
 Start the proxy server:
 
 ```bash
-bun run proxy.js
+bun run proxy.ts
 ```
 
 The proxy server will start on the configured port and only accept connections from the specified allowed IP addresses.
