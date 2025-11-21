@@ -58,47 +58,47 @@ The proxy server will start on the configured port and only accept connections f
 For production deployment, use PM2 to manage the proxy server.
 
 1. Create ecosystem.config.js:
-```
-// ecosystem.config.js
-module.exports = {
-  apps: [{
-    name: 'deus-proxy',
-    script: '/var/proxy.ts',
-    interpreter: '/home/.bun/bin/bun',
-    interpreter_args: 'run',
-    exec_mode: 'fork',
-    instances: 1,
-    autorestart: false,
-    watch: false,
-    env: {
-      NODE_ENV: 'production',
-      PORT: 33000,
-      ALLOWED_IPS: '5.7.7.7'
-    }
-  }]
-};
-```
+   ```
+   // ecosystem.config.js
+   module.exports = {
+     apps: [{
+       name: 'deus-proxy',
+       script: '/var/proxy.ts',
+       interpreter: '/home/.bun/bin/bun',
+       interpreter_args: 'run',
+       exec_mode: 'fork',
+       instances: 1,
+       autorestart: false,
+       watch: false,
+       env: {
+         NODE_ENV: 'production',
+         PORT: 33000,
+         ALLOWED_IPS: '5.7.7.7'
+       }
+     }]
+   };
+   ```
 2. Start the proxy server with PM2 using custom ecosystem file:
-```
-pm2 start ecosystem.config.js
-```
+   ```
+   pm2 start ecosystem.config.js
+   ```
 3. Manage your proxy server using:
-```
-# View process status
-pm2 status
-
-# View logs
-pm2 logs deus-proxy
-
-# Stop the proxy server
-pm2 stop deus-proxy
-
-# Restart the proxy server
-pm2 restart deus-proxy
-
-# Delete the proxy server from PM2
-pm2 delete deus-proxy
-```
+   ```
+   # View process status
+   pm2 status
+   
+   # View logs
+   pm2 logs deus-proxy
+   
+   # Stop the proxy server
+   pm2 stop deus-proxy
+   
+   # Restart the proxy server
+   pm2 restart deus-proxy
+   
+   # Delete the proxy server from PM2
+   pm2 delete deus-proxy
+   ```
 ## PM2 Process Management
 ```
 # Save the current PM2 configuration
