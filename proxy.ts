@@ -12,15 +12,8 @@ try {
   console.error('Failed to load config file, using defaults:', error);
   // Default fallback values
   config = {
-    rateLimit: {
-      maxRequests: 300,
-      timeWindowMs: 10000,
-      pauseDurationMs: 3000
-    },
-    server: {
-      bindIp: '0.0.0.0',
-      bindPort: 3478
-    }
+  "port": "32000",
+  "allowed_ips": "52.16.14.28,52.1.144.*,192.168.1.*,10.0.0.0/24"
   };
 }
 
