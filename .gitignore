@@ -6,3 +6,4 @@ package-lock.json
 cert.cer
 key.key
 .env
+config.json
