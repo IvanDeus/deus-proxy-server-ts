@@ -40,7 +40,7 @@ Create a `config.json` file in the root directory with the following variables. 
 
 ### Configuration Options
 
-- `PORT`: The port number on which the proxy server will listen (default: 33000)
+- `PORT`: The port number on which the proxy server will listen (default: 32000)
 - `ALLOWED_IPS`: Comma-separated list of IP addresses or IP ranges that are allowed to use the proxy. Supports:
   - Individual IPs: `192.168.1.100`
   - IP wildcards: `192.168.1.*`
