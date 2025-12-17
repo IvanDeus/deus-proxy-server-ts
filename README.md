@@ -29,11 +29,13 @@ A Bun-based anonymous HTTP/HTTPS proxy server that provides secure and flexible 
 
 ## Configuration
 
-Create a `.env` file in the root directory with the following variables. Choose proxy server port and allowed IPs to access proxy:
+Create a `config.json` file in the root directory with the following variables. Choose proxy server port and allowed IPs to access proxy:
 
-```env
-PORT=33000
-ALLOWED_IPS=52.167.144.238,52.167.144.*,192.168.1.*,10.0.0.0/24
+```
+{
+  "port": "8080",
+  "allowed_ips": "52.167.144.238,52.167.144.*,192.168.1.*,10.0.0.0/24" 
+}
 ```
 
 ### Configuration Options
