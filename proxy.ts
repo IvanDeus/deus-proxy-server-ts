@@ -1,6 +1,28 @@
 // proxy.ts
-import { config } from 'dotenv';
-config();
+import fs from 'node:fs';
+import path from 'node:path';
+
+// --- Load Configuration ---
+let config: any;
+try {
+  const configPath = path.join(__dirname, 'config.json');
+  const configData = fs.readFileSync(configPath, 'utf-8');
+  config = JSON.parse(configData);
+} catch (error) {
+  console.error('Failed to load config file, using defaults:', error);
+  // Default fallback values
+  config = {
+    rateLimit: {
+      maxRequests: 300,
+      timeWindowMs: 10000,
+      pauseDurationMs: 3000
+    },
+    server: {
+      bindIp: '0.0.0.0',
+      bindPort: 3478
+    }
+  };
+}
 
 import { Server, createServer, IncomingMessage, ServerResponse, request as httpRequest } from 'http';
 import { request as httpsRequest } from 'https';
@@ -12,8 +34,8 @@ import { setDefaultResultOrder } from 'dns';
 setDefaultResultOrder('ipv4first');
 
 // Configuration from environment variables
-const PORT = parseInt(process.env.PORT || '32000');
-const ALLOWED_IPS = process.env.ALLOWED_IPS ? process.env.ALLOWED_IPS.split(',') : [];
+const PORT = parseInt(config.port);
+const ALLOWED_IPS = config.allowed_ips ? process.config.allowed_ips.split(',') : [];
 
 // Track active connections for graceful shutdown
 const activeConnections = new Set<Socket>();
