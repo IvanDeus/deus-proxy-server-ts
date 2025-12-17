@@ -28,7 +28,7 @@ setDefaultResultOrder('ipv4first');
 
 // Configuration from environment variables
 const PORT = parseInt(config.port);
-const ALLOWED_IPS = config.allowed_ips ? process.config.allowed_ips.split(',') : [];
+const ALLOWED_IPS = config.allowed_ips ? config.allowed_ips.split(',') : [];
 
 // Track active connections for graceful shutdown
 const activeConnections = new Set<Socket>();
