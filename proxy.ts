@@ -1,7 +1,7 @@
 // proxy.ts
 import fs from 'node:fs';
 import path from 'node:path';
-
+import util from 'node:util';
 // --- Load Configuration ---
 let config: any;
 try {
@@ -23,6 +23,17 @@ import { parse as urlParse, Url } from 'url';
 import { connect as netConnect, Socket } from 'net';
 import { setDefaultResultOrder } from 'dns';
 
+// Set DNS to prefer IPv4 but fall back to IPv6
+setDefaultResultOrder('ipv4first');
+
+// Configuration from environment variables
+const PORT = parseInt(config.port);
+const ALLOWED_IPS = config.allowed_ips ? config.allowed_ips.split(',') : [];
+
+// Track active connections for graceful shutdown
+const activeConnections = new Set<Socket>();
+let isShuttingDown = false;
+
 // --- Start of Logging Setup ---
 const originalLog = console.log;
 const originalError = console.error;
@@ -37,17 +48,6 @@ console.error = function (message, ...args) {
     originalError.apply(console, [formattedMessage]);
 };
 // --- End of Logging Setup ---
-
-// Set DNS to prefer IPv4 but fall back to IPv6
-setDefaultResultOrder('ipv4first');
-
-// Configuration from environment variables
-const PORT = parseInt(config.port);
-const ALLOWED_IPS = config.allowed_ips ? config.allowed_ips.split(',') : [];
-
-// Track active connections for graceful shutdown
-const activeConnections = new Set<Socket>();
-let isShuttingDown = false;
 
 // IP matching utility functions
 function ipToInt(ip: string): number {
