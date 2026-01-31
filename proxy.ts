@@ -23,6 +23,21 @@ import { parse as urlParse, Url } from 'url';
 import { connect as netConnect, Socket } from 'net';
 import { setDefaultResultOrder } from 'dns';
 
+// --- Start of Logging Setup ---
+const originalLog = console.log;
+const originalError = console.error;
+console.log = function (message, ...args) {
+    const timestamp = new Date().toLocaleString('en-GB', { timeZone: 'Europe/Moscow' });
+    const formattedMessage = `[${timestamp}] ${util.format(message, ...args)}`;
+    originalLog.apply(console, [formattedMessage]);
+};
+console.error = function (message, ...args) {
+    const timestamp = new Date().toLocaleString('en-GB', { timeZone: 'Europe/Moscow' });
+    const formattedMessage = `[${timestamp}] [ERROR] ${util.format(message, ...args)}`;
+    originalError.apply(console, [formattedMessage]);
+};
+// --- End of Logging Setup ---
+
 // Set DNS to prefer IPv4 but fall back to IPv6
 setDefaultResultOrder('ipv4first');
 
