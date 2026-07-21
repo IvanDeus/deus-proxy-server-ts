@@ -5,8 +5,9 @@ setDefaultResultOrder("ipv4first");
 
 // --- Config from environment ---
 const PORT = parseInt(Bun.env.PORT ?? "32000", 10);
-const PIN = Bun.env.PIN ?? "0000";
-const TIMEOUT_MIN = parseInt(Bun.env.TIMEOUT ?? "300", 10); // minutes
+const PIN = parseInt(Bun.env.PIN) ?? "0000";
+// minutes
+const TIMEOUT_MIN = parseInt(Bun.env.TIMEOUT ?? "300", 10);
 const TIMEOUT_MS = TIMEOUT_MIN * 60 * 1000;
 
 // --- State: IP → expiry timestamp (ms) ---
