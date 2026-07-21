@@ -1,393 +1,326 @@
-// proxy.ts
-import fs from 'node:fs';
-import path from 'node:path';
-import util from 'node:util';
-// --- Load Configuration ---
-let config: any;
-try {
-  const configPath = path.join(__dirname, 'config.json');
-  const configData = fs.readFileSync(configPath, 'utf-8');
-  config = JSON.parse(configData);
-} catch (error) {
-  console.error('Failed to load config file, using defaults:', error);
-  // Default fallback values
-  config = {
-  "port": "32000",
-  "allowed_ips": "52.16.14.28,52.1.144.*,192.168.1.*,10.0.0.0/24"
-  };
-}
+// proxy.ts — Bun HTTP/HTTPS proxy with PIN auth + IP timeout
+import { setDefaultResultOrder } from "node:dns";
 
-import { Server, createServer, IncomingMessage, ServerResponse, request as httpRequest } from 'http';
-import { request as httpsRequest } from 'https';
-import { parse as urlParse, Url } from 'url';
-import { connect as netConnect, Socket } from 'net';
-import { setDefaultResultOrder } from 'dns';
+setDefaultResultOrder("ipv4first");
 
-// Set DNS to prefer IPv4 but fall back to IPv6
-setDefaultResultOrder('ipv4first');
+// --- Config from environment ---
+const PORT = parseInt(Bun.env.PORT ?? "32000", 10);
+const PIN = Bun.env.PIN ?? "0000";
+const TIMEOUT_MIN = parseInt(Bun.env.TIMEOUT ?? "300", 10); // minutes
+const TIMEOUT_MS = TIMEOUT_MIN * 60 * 1000;
 
-// Configuration from environment variables
-const PORT = parseInt(config.port);
-const ALLOWED_IPS = config.allowed_ips ? config.allowed_ips.split(',') : [];
-
-// Track active connections for graceful shutdown
-const activeConnections = new Set<Socket>();
+// --- State: IP → expiry timestamp (ms) ---
+const allowedIPs = new Map<string, number>();
 let isShuttingDown = false;
 
-// --- Start of Logging Setup ---
-const originalLog = console.log;
-const originalError = console.error;
-console.log = function (message, ...args) {
-    const timestamp = new Date().toLocaleString('en-GB', { timeZone: 'Europe/Moscow' });
-    const formattedMessage = `[${timestamp}] ${util.format(message, ...args)}`;
-    originalLog.apply(console, [formattedMessage]);
-};
-console.error = function (message, ...args) {
-    const timestamp = new Date().toLocaleString('en-GB', { timeZone: 'Europe/Moscow' });
-    const formattedMessage = `[${timestamp}] [ERROR] ${util.format(message, ...args)}`;
-    originalError.apply(console, [formattedMessage]);
-};
-// --- End of Logging Setup ---
+// --- Logging ---
+const ts = () =>
+  new Date().toLocaleString("en-GB", { timeZone: "Europe/Moscow" });
+const log = (msg: string) => console.log(`[${ts()}] ${msg}`);
+const logErr = (msg: string) => console.error(`[${ts()}] [ERROR] ${msg}`);
 
-// IP matching utility functions
+// --- Expired IP cleanup (every 30s) ---
+const cleanupTimer = setInterval(() => {
+  const now = Date.now();
+  for (const [ip, expires] of allowedIPs) {
+    if (now >= expires) {
+      allowedIPs.delete(ip);
+      log(`IP expired and removed: ${ip}`);
+    }
+  }
+}, 30_000);
+
+// --- IP utilities ---
 function ipToInt(ip: string): number {
-  return ip.split('.').reduce((int, octet) => (int << 8) + parseInt(octet, 10), 0) >>> 0;
+  return ip.split(".").reduce((n, o) => (n << 8) + parseInt(o, 10), 0) >>> 0;
 }
 
-interface IPRange {
-  start: number;
-  end: number;
+function cidrMatch(cidr: string, ip: string): boolean {
+  const [net, bits = "32"] = cidr.split("/");
+  const mask = ~((1 << (32 - parseInt(bits, 10))) - 1);
+  return (ipToInt(net) & mask) === (ipToInt(ip) & mask);
 }
 
-function cidrToRange(cidr: string): IPRange {
-  const [network, bits = '32'] = cidr.split('/');
-  const bitCount = parseInt(bits, 10);
-  const mask = ~((1 << (32 - bitCount)) - 1);
-  const networkInt = ipToInt(network);
-  const start = networkInt & mask;
-  const end = start + (1 << (32 - bitCount)) - 1;
-  return { start, end };
+function wildcardMatch(pattern: string, ip: string): boolean {
+  const re = new RegExp(
+    "^" + pattern.replace(/\./g, "\\.").replace(/\*/g, "[0-9]+") + "$"
+  );
+  return re.test(ip);
 }
 
-function matchesWildcard(pattern: string, ip: string): boolean {
-  const regexPattern = pattern.replace(/\./g, '\\.').replace(/\*/g, '[0-9]+');
-  const regex = new RegExp(`^${regexPattern}$`);
-  return regex.test(ip);
-}
-
-function matchesCidr(cidr: string, ip: string): boolean {
-  try {
-    const ipInt = ipToInt(ip);
-    const range = cidrToRange(cidr);
-    return ipInt >= range.start && ipInt <= range.end;
-  } catch (err) {
+function isIPAllowed(ip: string): boolean {
+  // Direct entry with timeout check
+  const expires = allowedIPs.get(ip);
+  if (expires !== undefined) {
+    if (Date.now() < expires) return true;
+    allowedIPs.delete(ip); // lazy cleanup
     return false;
   }
+  // Wildcard / CIDR entries (stored with key like "10.0.0.*" or "10.0.0.0/24")
+  for (const [entry, exp] of allowedIPs) {
+    if (Date.now() >= exp) continue;
+    if (entry.includes("*") && wildcardMatch(entry, ip)) return true;
+    if (entry.includes("/") && cidrMatch(entry, ip)) return true;
+  }
+  return false;
 }
 
-function isIPAllowed(clientIP: string): boolean {
-  if (ALLOWED_IPS.length === 0) return true; // No restrictions if no ACL
+function getClientIP(req: Request, srv: any): string {
+  const fwd = req.headers.get("x-forwarded-for");
+  if (fwd) return fwd.split(",")[0].trim();
+  const addr = srv.requestIP(req);
+  return addr?.address?.replace(/^::ffff:/, "") ?? "unknown";
+}
 
-  return ALLOWED_IPS.some(pattern => {
-    if (pattern.includes('*')) {
-      return matchesWildcard(pattern, clientIP);
-    } else if (pattern.includes('/')) {
-      return matchesCidr(pattern, clientIP);
-    } else {
-      return pattern === clientIP;
-    }
+function msToHuman(ms: number): string {
+  const totalMin = Math.floor(ms / 60_000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+// --- HTML pages ---
+function pinPage(error = false): Response {
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Proxy Auth</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    background:#0f172a;color:#e2e8f0;
+    display:flex;align-items:center;justify-content:center;
+    min-height:100dvh;padding:1rem;
+  }
+  .card{
+    background:#1e293b;border-radius:1rem;padding:2.5rem 2rem;
+    width:100%;max-width:340px;text-align:center;
+    box-shadow:0 25px 50px -12px rgba(0,0,0,.5);
+  }
+  h1{font-size:1.4rem;margin-bottom:.5rem}
+  p.sub{font-size:.85rem;color:#94a3b8;margin-bottom:1.5rem}
+  input[type=password]{
+    width:100%;padding:.9rem 1rem;font-size:1.5rem;text-align:center;
+    letter-spacing:.6em;border:2px solid #334155;border-radius:.6rem;
+    background:#0f172a;color:#f1f5f9;outline:none;transition:border-color .2s;
+  }
+  input:focus{border-color:#3b82f6}
+  input.shake{animation:shake .4s}
+  @keyframes shake{
+    0%,100%{transform:translateX(0)}
+    20%,60%{transform:translateX(-8px)}
+    40%,80%{transform:translateX(8px)}
+  }
+  button{
+    width:100%;margin-top:1.2rem;padding:.9rem;font-size:1.05rem;
+    font-weight:600;border:none;border-radius:.6rem;cursor:pointer;
+    background:#3b82f6;color:#fff;transition:background .2s;
+  }
+  button:active{background:#2563eb}
+  .err{color:#f87171;font-size:.85rem;margin-top:.8rem;min-height:1.2em}
+  .timeout-hint{font-size:.75rem;color:#64748b;margin-top:1.2rem}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>🔐 Proxy Access</h1>
+  <p class="sub">Enter PIN to authorize your IP</p>
+  <form method="POST" action="/auth">
+    <input type="password" name="pin" inputmode="numeric" pattern="[0-9]*"
+      autocomplete="off" maxlength="16" placeholder="••••"
+      ${error ? 'class="shake"' : ""} autofocus>
+    <button type="submit">Unlock</button>
+  </form>
+  <div class="err">${error ? "Invalid PIN. Try again." : ""}</div>
+  <div class="timeout-hint">Access expires after ${TIMEOUT_MIN} min of inactivity</div>
+</div>
+</body>
+</html>`;
+  return new Response(html, {
+    headers: { "Content-Type": "text/html; charset=utf-8" },
   });
 }
 
-function getClientIP(req: IncomingMessage): string {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (forwarded && typeof forwarded === 'string') {
-    return forwarded.split(',')[0].trim();
+function successPage(ip: string): Response {
+  const expiresAt = new Date(Date.now() + TIMEOUT_MS);
+  const timeStr = expiresAt.toLocaleString("en-GB", { timeZone: "Europe/Moscow" });
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Access Granted</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    background:#0f172a;color:#e2e8f0;
+    display:flex;align-items:center;justify-content:center;
+    min-height:100dvh;padding:1rem;
   }
-  return req.socket.remoteAddress?.replace(/^::ffff:/, '') || 'unknown';
-}
-
-function trackConnection(socket: Socket, description: string): void {
-  if (isShuttingDown) {
-    socket.destroy();
-    return;
+  .card{
+    background:#1e293b;border-radius:1rem;padding:2.5rem 2rem;
+    width:100%;max-width:400px;text-align:center;
+    box-shadow:0 25px 50px -12px rgba(0,0,0,.5);
   }
-
-  const connectionId = `${description}-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
-
-  (socket as any)._connectionId = connectionId;
-  activeConnections.add(socket);
-
-  const cleanup = () => {
-    if (activeConnections.has(socket)) {
-      activeConnections.delete(socket);
-      console.log(`Connection closed: ${connectionId} (${activeConnections.size} remaining)`);
+  .icon{font-size:3rem;margin-bottom:1rem}
+  h1{font-size:1.3rem;color:#4ade80;margin-bottom:1rem}
+  .ip{
+    font-size:1.5rem;font-weight:700;font-family:"SF Mono",Menlo,monospace;
+    background:#0f172a;padding:.7rem 1.2rem;border-radius:.5rem;
+    display:inline-block;margin:.5rem 0 1rem;color:#38bdf8;word-break:break-all;
+  }
+  .meta{font-size:.8rem;color:#94a3b8;margin-bottom:.4rem}
+  .meta strong{color:#e2e8f0}
+  .countdown{
+    margin-top:1.2rem;font-size:2rem;font-weight:700;
+    font-family:"SF Mono",Menlo,monospace;color:#facc15;
+  }
+  .countdown.expired{color:#f87171;font-size:1rem}
+  p.note{font-size:.75rem;color:#64748b;margin-top:1.2rem}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="icon">✅</div>
+  <h1>Your IP is now allowed</h1>
+  <div class="ip">${ip}</div>
+  <div class="meta">Expires: <strong>${timeStr}</strong> (Moscow)</div>
+  <div class="meta">Duration: <strong>${msToHuman(TIMEOUT_MS)}</strong></div>
+  <div class="countdown" id="cd"></div>
+  <p class="note">Configure your device proxy → this server :${PORT}</p>
+</div>
+<script>
+(function(){
+  const end = ${expiresAt.getTime()};
+  const el = document.getElementById('cd');
+  function tick(){
+    const left = end - Date.now();
+    if(left <= 0){
+      el.textContent = '⏰ Access expired — re-enter PIN';
+      el.classList.add('expired');
+      return;
     }
-  };
-
-  socket.on('close', cleanup);
-  socket.on('error', cleanup);
-  socket.on('end', cleanup);
-
-  console.log(`New connection: ${connectionId} (${activeConnections.size} total)`);
+    const s = Math.floor(left/1000);
+    const h = Math.floor(s/3600);
+    const m = Math.floor((s%3600)/60);
+    const sec = s%60;
+    el.textContent =
+      (h>0?h+'h ':'') +
+      String(m).padStart(2,'0')+'m '+
+      String(sec).padStart(2,'0')+'s';
+    setTimeout(tick, 1000);
+  }
+  tick();
+})();
+</script>
+</body>
+</html>`;
+  return new Response(html, {
+    headers: { "Content-Type": "text/html; charset=utf-8" },
+  });
 }
 
-function destroyAllConnections(): void {
-  console.log(`\nForcefully closing ${activeConnections.size} active connections...`);
+// --- Hop-by-hop cleanup ---
+const HOP = [
+  "connection","keep-alive","proxy-authenticate",
+  "proxy-authorization","te","trailers","transfer-encoding","upgrade",
+];
+function cleanHeaders(h: Headers): Headers {
+  const out = new Headers(h);
+  for (const k of HOP) out.delete(k);
+  out.delete("proxy-connection");
+  return out;
+}
 
-  activeConnections.forEach(socket => {
+// --- Server ---
+const server = Bun.serve({
+  port: PORT,
+  idleTimeout: 120,
+
+  async fetch(req: Request, srv): Promise<Response | undefined> {
+    const url = new URL(req.url);
+    const clientIP = getClientIP(req, srv);
+
+    // --- Auth routes (always open) ---
+    if (url.pathname === "/" && req.method === "GET") return pinPage();
+
+    if (url.pathname === "/auth" && req.method === "POST") {
+      const body = await req.formData();
+      const pin = (body.get("pin") as string) ?? "";
+      if (pin === PIN) {
+        allowedIPs.set(clientIP, Date.now() + TIMEOUT_MS);
+        log(`PIN OK — allowed ${clientIP} for ${TIMEOUT_MIN} min`);
+        return successPage(clientIP);
+      }
+      log(`PIN FAIL from ${clientIP}`);
+      return pinPage(true);
+    }
+
+    // --- Proxy routes require auth ---
+    if (!isIPAllowed(clientIP)) {
+      log(`Blocked ${req.method} from unauthorized IP: ${clientIP}`);
+      return new Response("403 Forbidden — IP not authorized", { status: 403 });
+    }
+
+    // --- CONNECT tunnel (HTTPS) ---
+    if (req.method === "CONNECT") {
+      const target = url.hostname || url.host;
+      const port = parseInt(url.port) || 443;
+      log(`CONNECT ${target}:${port} from ${clientIP}`);
+      try {
+        await Bun.connect({ hostname: target, port });
+        return new Response(null, { status: 200 });
+      } catch (err: any) {
+        logErr(`CONNECT failed ${target}:${port} — ${err.message}`);
+        return new Response("502 Bad Gateway", { status: 502 });
+      }
+    }
+
+    // --- HTTP proxy ---
+    log(`HTTP ${req.method} ${req.url} from ${clientIP}`);
     try {
-      socket.destroy();
-    } catch (err) {
-      // Ignore errors during destruction
+      const headers = cleanHeaders(req.headers);
+      headers.set("host", url.host);
+      const proxyRes = await fetch(req.url, {
+        method: req.method,
+        headers,
+        body: ["GET", "HEAD"].includes(req.method) ? undefined : req.body,
+        // @ts-ignore
+        redirect: "manual",
+      });
+      return new Response(proxyRes.body, {
+        status: proxyRes.status,
+        statusText: proxyRes.statusText,
+        headers: cleanHeaders(proxyRes.headers),
+      });
+    } catch (err: any) {
+      logErr(`Proxy error ${req.url}: ${err.message}`);
+      return new Response(`502 Bad Gateway: ${err.message}`, { status: 502 });
     }
-  });
+  },
 
-  activeConnections.clear();
-}
-
-// Remove hop-by-hop headers
-function removeHopByHopHeaders(headers: { [key: string]: string | string[] | undefined }): void {
-  const hopByHopHeaders = [
-    'connection', 'keep-alive', 'proxy-authenticate',
-    'proxy-authorization', 'te', 'trailers', 'transfer-encoding', 'upgrade'
-  ];
-
-  hopByHopHeaders.forEach(header => {
-    delete headers[header];
-  });
-}
-
-// Create HTTP proxy server
-const proxy: Server = createServer();
-
-proxy.on('request', (clientReq: IncomingMessage, clientRes: ServerResponse) => {
-  const clientIP = getClientIP(clientReq);
-
-  if (!isIPAllowed(clientIP)) {
-    console.log(`Blocked HTTP request from unauthorized IP: ${clientIP}`);
-    clientRes.writeHead(403, { 'Content-Type': 'text/plain' });
-    clientRes.end('Access denied: Your IP is not allowed to use this proxy');
-    return;
-  }
-
-  console.log(`Proxying HTTP request from ${clientIP}: ${clientReq.method} ${clientReq.url}`);
-
-  const parsedUrl: Url = urlParse(clientReq.url || '');
-
-  const options = {
-    hostname: parsedUrl.hostname || '',
-    port: parsedUrl.port || 80,
-    path: parsedUrl.path || '',
-    method: clientReq.method,
-    headers: { ...clientReq.headers },
-    family: 4
-  };
-
-  options.headers.host = parsedUrl.host || '';
-  delete options.headers['proxy-connection'];
-  delete options.headers['connection'];
-  delete options.headers['keep-alive'];
-
-  // Track client connection
-  trackConnection(clientReq.socket, `HTTP-${clientIP}`);
-  trackConnection(clientRes.socket, `HTTP-RES-${clientIP}`);
-
-  const proxyReq = httpRequest(options, (proxyRes: IncomingMessage) => {
-    removeHopByHopHeaders(proxyRes.headers);
-    clientRes.writeHead(proxyRes.statusCode || 500, proxyRes.headers);
-    proxyRes.pipe(clientRes);
-  });
-
-  // Track proxy request socket
-  proxyReq.on('socket', (socket: Socket) => {
-    trackConnection(socket, `HTTP-PROXY-${parsedUrl.hostname}`);
-  });
-
-  proxyReq.on('error', (err: NodeJS.ErrnoException) => {
-    console.error('Proxy request error for', parsedUrl.hostname, ':', err.code);
-
-    if (err.code === 'ENOTFOUND' || err.code === 'EAI_FAIL') {
-      console.log('Retrying without IP family restriction...');
-      const fallbackOptions = { ...options };
-      delete (fallbackOptions as any).family;
-
-      const fallbackReq = httpRequest(fallbackOptions, (fallbackRes: IncomingMessage) => {
-        removeHopByHopHeaders(fallbackRes.headers);
-        clientRes.writeHead(fallbackRes.statusCode || 500, fallbackRes.headers);
-        fallbackRes.pipe(clientRes);
-      });
-
-      fallbackReq.on('socket', (socket: Socket) => {
-        trackConnection(socket, `HTTP-FALLBACK-${parsedUrl.hostname}`);
-      });
-
-      fallbackReq.on('error', (fallbackErr: NodeJS.ErrnoException) => {
-        console.error('Fallback request also failed:', fallbackErr.code);
-        clientRes.writeHead(500);
-        clientRes.end('Proxy error: ' + fallbackErr.message);
-      });
-
-      clientReq.pipe(fallbackReq);
-    } else {
-      clientRes.writeHead(500);
-      clientRes.end('Proxy error: ' + err.message);
-    }
-  });
-
-  proxyReq.setTimeout(10000, () => {
-    console.log('HTTP request timeout for:', parsedUrl.hostname);
-    proxyReq.destroy();
-    clientRes.writeHead(504);
-    clientRes.end('Gateway Timeout');
-  });
-
-  clientReq.pipe(proxyReq);
+  error(err) {
+    logErr(`Server error: ${err.message}`);
+    return new Response("Internal Server Error", { status: 500 });
+  },
 });
 
-// Handle CONNECT method for HTTPS tunneling
-proxy.on('connect', (clientReq: IncomingMessage, clientSocket: Socket, head: Buffer) => {
-  const clientIP = getClientIP(clientReq);
+// --- Startup ---
+log(`Proxy on :${PORT} | PIN auth | IP timeout: ${TIMEOUT_MIN} min`);
 
-  if (!isIPAllowed(clientIP)) {
-    console.log(`Blocked HTTPS request from unauthorized IP: ${clientIP}`);
-    clientSocket.end('HTTP/1.1 403 Forbidden\r\n\r\nAccess denied: Your IP is not allowed to use this proxy');
-    return;
-  }
-
-  console.log(`Proxying HTTPS request from ${clientIP}: CONNECT ${clientReq.url}`);
-
-  const [hostname, port] = (clientReq.url || '').split(':');
-  const serverPort = parseInt(port) || 443;
-
-  // Track client socket
-  trackConnection(clientSocket, `HTTPS-CLIENT-${clientIP}`);
-
-  const serverSocket = netConnect({
-    host: hostname || '',
-    port: serverPort,
-    family: 4
-  }, () => {
-    console.log(`Successfully connected to ${hostname}:${serverPort} for client ${clientIP}`);
-
-    // Track server socket
-    trackConnection(serverSocket, `HTTPS-SERVER-${hostname}`);
-
-    clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-    serverSocket.write(head);
-    serverSocket.pipe(clientSocket);
-    clientSocket.pipe(serverSocket);
-  });
-
-  serverSocket.on('error', (err: NodeJS.ErrnoException) => {
-    console.error(`Server socket error for ${hostname}:`, err.code);
-
-    if (err.code === 'ENOTFOUND' || err.code === 'EAI_FAIL') {
-      console.log(`Retrying ${hostname} without IP family restriction...`);
-
-      const fallbackSocket = netConnect({
-        host: hostname || '',
-        port: serverPort
-      }, () => {
-        console.log(`Fallback connection successful to ${hostname}`);
-
-        // Track fallback socket
-        trackConnection(fallbackSocket, `HTTPS-FALLBACK-${hostname}`);
-
-        clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-        fallbackSocket.write(head);
-        fallbackSocket.pipe(clientSocket);
-        clientSocket.pipe(fallbackSocket);
-      });
-
-      fallbackSocket.on('error', (fallbackErr: NodeJS.ErrnoException) => {
-        console.error(`Fallback connection failed for ${hostname}:`, fallbackErr.code);
-        clientSocket.end('HTTP/1.1 500 Connection Failed\r\n\r\n');
-      });
-
-      fallbackSocket.setTimeout(10000, () => {
-        console.log(`Fallback socket timeout for: ${hostname}`);
-        fallbackSocket.destroy();
-        clientSocket.end();
-      });
-    } else {
-      clientSocket.end('HTTP/1.1 500 Connection Failed\r\n\r\n');
-    }
-  });
-
-  clientSocket.on('error', (err: NodeJS.ErrnoException) => {
-    console.error('Client socket error:', err.code);
-    serverSocket.end();
-  });
-
-  serverSocket.setTimeout(10000, () => {
-    console.log(`Socket timeout for: ${hostname}`);
-    serverSocket.destroy();
-    clientSocket.end();
-  });
-});
-
-proxy.on('error', (err: Error) => {
-  console.error('Proxy server error:', err);
-});
-
-// Start the proxy server
-proxy.listen(PORT, () => {
-  console.log(`Anonymous HTTP/HTTPS proxy server running on port ${PORT}`);
-  console.log('Supports both HTTP and HTTPS traffic');
-  console.log('Using IPv4 preference with IPv6 fallback');
-
-  if (ALLOWED_IPS.length > 0) {
-    console.log('Access Control List enabled:');
-    ALLOWED_IPS.forEach(ip => console.log(`  - ${ip}`));
-  } else {
-    console.log('No ACL restrictions - proxy is open to all IPs');
-  }
-});
-
-// Graceful shutdown with timeout
-function shutdown(): void {
+// --- Graceful shutdown ---
+function shutdown() {
   if (isShuttingDown) return;
-
   isShuttingDown = true;
-  console.log('\nShutting down proxy server...');
-  console.log(`Active connections: ${activeConnections.size}`);
-
-  // Stop accepting new connections
-  proxy.close(() => {
-    console.log('Proxy server stopped accepting new connections');
-  });
-
-  // Give connections 3 seconds to close gracefully
-  setTimeout(() => {
-    if (activeConnections.size > 0) {
-      console.log(`Force closing ${activeConnections.size} remaining connections...`);
-      destroyAllConnections();
-    }
-
-    console.log('Proxy server fully shut down');
-    process.exit(0);
-  }, 3000);
-
-  // Force shutdown after 10 seconds max
-  setTimeout(() => {
-    console.log('Forcing shutdown...');
-    destroyAllConnections();
-    process.exit(0);
-  }, 10000);
+  log("Shutting down…");
+  clearInterval(cleanupTimer);
+  server.stop(true);
+  process.exit(0);
 }
-
-// Handle shutdown signals
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
-
-// Handle uncaught exceptions
-process.on('uncaughtException', (err: Error) => {
-  console.error('Uncaught Exception:', err);
-  shutdown();
-});
-
-process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  shutdown();
-});
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
