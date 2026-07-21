@@ -58,37 +58,14 @@ The proxy server will start on the configured port and only accept connections f
 
 ## Production Mode with PM2
 For production deployment, use PM2 to manage the proxy server.
-
-1. Create ecosystem.config.js:
+   
+1. Start the proxy server with PM2 using custom ecosystem file:
    
    ```
-   // ecosystem.config.js
-   module.exports = {
-     apps: [{
-       name: 'deus-proxy',
-       script: '/var/proxy.ts',
-       interpreter: '/home/.bun/bin/bun',
-       interpreter_args: 'run',
-       exec_mode: 'fork',
-       instances: 1,
-       autorestart: true,
-       watch: false,
-       env: {
-         NODE_ENV: 'production',
-         PORT: 33000,
-         ALLOWED_IPS: '5.7.7.7'
-       }
-     }]
-   };
+   pm2 start proxy.ts --name deus-proxy
    ```
    
-3. Start the proxy server with PM2 using custom ecosystem file:
-   
-   ```
-   pm2 start ecosystem.config.js
-   ```
-   
-5. Manage your proxy server using:
+2. Manage your proxy server using:
    
    ```
    # View process status
@@ -107,6 +84,8 @@ For production deployment, use PM2 to manage the proxy server.
    pm2 restart deus-proxy
    
    ```
+3. Go to URL and enter PIN to allow proxy access 
+   
 ## PM2 Process Management
 ```
 # Save the current PM2 configuration
@@ -119,4 +98,4 @@ pm2 startup
 pm2 monit
 ```
 
-2025 [ ivan deus ]
+2026 [ ivan deus ]
