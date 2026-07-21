@@ -10,7 +10,7 @@ setDefaultResultOrder('ipv4first');
 // --- Config ---
 const PORT = parseInt(Bun.env.PORT ?? "32000", 10);
 const AUTHPORT = parseInt(Bun.env.AUTHPORT ?? "32001", 10);
-const PIN = process.env.PIN ?? "0000";
+const PIN = Bun.env.PIN ?? "0000";
 const TIMEOUT_MIN = parseInt(Bun.env.TIMEOUT ?? "300", 10);
 const TIMEOUT_MS = TIMEOUT_MIN * 60000;
 
