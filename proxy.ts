@@ -5,6 +5,7 @@ setDefaultResultOrder("ipv4first");
 
 // --- Config ---
 const PORT = parseInt(Bun.env.PORT ?? "32000", 10);
+const AUTHPORT = parseInt(Bun.env.AUTHPORT ?? "32001", 10);
 const PIN = Bun.env.PIN ?? "0000";
 const TIMEOUT_MIN = parseInt(Bun.env.TIMEOUT ?? "300", 10);
 const TIMEOUT_MS = TIMEOUT_MIN * 60000;
@@ -68,7 +69,6 @@ function msToHuman(ms: number): string {
 
 // --- Parse "host:port" from CONNECT target (no URL scheme!) ---
 function parseConnectTarget(raw: string): { host: string; port: number } {
-  // raw looks like "example.com:443" or "10.1.108.16:8001"
   const lastColon = raw.lastIndexOf(":");
   if (lastColon === -1) return { host: raw, port: 443 };
   return {
@@ -181,8 +181,42 @@ function cleanHeaders(h: Headers): Headers {
   return out;
 }
 
-// --- Server ---
-const server = Bun.serve({
+// --- Auth Server ---
+const authServer = Bun.serve({
+  port: AUTHPORT,
+  async fetch(req: Request, srv): Promise<Response | undefined> {
+    const clientIP = getClientIP(req, srv);
+    let url: URL;
+    try {
+      url = new URL(req.url);
+    } catch {
+      return new Response("400 Bad Request", { status: 400 });
+    }
+
+    if (url.pathname === "/" && req.method === "GET") return pinPage();
+
+    if (url.pathname === "/auth" && req.method === "POST") {
+      const body = await req.formData();
+      const pin = (body.get("pin") as string) ?? "";
+      if (pin === PIN) {
+        allowedIPs.set(clientIP, Date.now() + TIMEOUT_MS);
+        log(`PIN OK — allowed ${clientIP} for ${TIMEOUT_MIN} min`);
+        return successPage(clientIP);
+      }
+      log(`PIN FAIL from ${clientIP}`);
+      return pinPage(true);
+    }
+
+    return new Response("404 Not Found", { status: 404 });
+  },
+  error(err) {
+    logErr(`Auth server error: ${err.message}`);
+    return new Response("Internal Server Error", { status: 500 });
+  },
+});
+
+// --- Proxy Server ---
+const proxyServer = Bun.serve({
   port: PORT,
   idleTimeout: 120,
 
@@ -190,8 +224,6 @@ const server = Bun.serve({
     const clientIP = getClientIP(req, srv);
 
     // ====== CONNECT must be handled BEFORE new URL() ======
-    // Browser sends: "CONNECT example.com:443 HTTP/1.1"
-    // Bun gives us req.url = "example.com:443" (NO scheme)
     if (req.method === "CONNECT") {
       if (!isIPAllowed(clientIP)) {
         log(`Blocked CONNECT from unauthorized IP: ${clientIP}`);
@@ -206,9 +238,7 @@ const server = Bun.serve({
           hostname: host,
           port,
           socket: {
-            data(_socket, _data) {
-              // Bun pipes the tunnel internally after 200 is returned
-            },
+            data(_socket, _data) {},
             close() {},
             error(_socket, err) {
               logErr(`Upstream error ${host}:${port} — ${err}`);
@@ -216,7 +246,6 @@ const server = Bun.serve({
           },
         });
 
-        // 200 tells the client the tunnel is established
         return new Response(null, { status: 200 });
       } catch (err: any) {
         logErr(`CONNECT failed ${host}:${port} — ${err.message}`);
@@ -225,28 +254,11 @@ const server = Bun.serve({
     }
 
     // ====== From here on, req.url is a proper URL ======
-    // Direct browser hit:  "http://localhost:32000/"
-    // Proxy HTTP request:  "http://10.1.102.20:3000/api/login/ping"
     let url: URL;
     try {
       url = new URL(req.url);
     } catch {
       return new Response("400 Bad Request", { status: 400 });
-    }
-
-    // --- Auth routes (always open) ---
-    if (url.pathname === "/" && req.method === "GET") return pinPage();
-
-    if (url.pathname === "/auth" && req.method === "POST") {
-      const body = await req.formData();
-      const pin = (body.get("pin") as string) ?? "";
-      if (pin === PIN) {
-        allowedIPs.set(clientIP, Date.now() + TIMEOUT_MS);
-        log(`PIN OK — allowed ${clientIP} for ${TIMEOUT_MIN} min`);
-        return successPage(clientIP);
-      }
-      log(`PIN FAIL from ${clientIP}`);
-      return pinPage(true);
     }
 
     // --- Proxy routes require auth ---
@@ -281,13 +293,13 @@ const server = Bun.serve({
   },
 
   error(err) {
-    logErr(`Server error: ${err.message}`);
+    logErr(`Proxy server error: ${err.message}`);
     return new Response("Internal Server Error", { status: 500 });
   },
 });
 
 // --- Startup ---
-log(`Proxy on :${PORT} | PIN auth | IP timeout: ${TIMEOUT_MIN} min`);
+log(`Proxy on :${PORT} | Auth on :${AUTHPORT} | PIN auth | IP timeout: ${TIMEOUT_MIN} min`);
 
 // --- Shutdown ---
 function shutdown() {
@@ -295,7 +307,8 @@ function shutdown() {
   isShuttingDown = true;
   log("Shutting down…");
   clearInterval(cleanupTimer);
-  server.stop(true);
+  proxyServer.stop(true);
+  authServer.stop(true);
   process.exit(0);
 }
 process.on("SIGINT", shutdown);
