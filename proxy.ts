@@ -8,10 +8,10 @@ import { setDefaultResultOrder } from 'dns';
 setDefaultResultOrder('ipv4first');
 
 // --- Config ---
-const PORT = parseInt(process.env.PORT ?? "32000", 10);
-const AUTHPORT = parseInt(process.env.AUTHPORT ?? "32001", 10);
+const PORT = parseInt(Bun.env.PORT ?? "32000", 10);
+const AUTHPORT = parseInt(Bun.env.AUTHPORT ?? "32001", 10);
 const PIN = process.env.PIN ?? "0000";
-const TIMEOUT_MIN = parseInt(process.env.TIMEOUT ?? "300", 10);
+const TIMEOUT_MIN = parseInt(Bun.env.TIMEOUT ?? "300", 10);
 const TIMEOUT_MS = TIMEOUT_MIN * 60000;
 
 // --- State ---
@@ -42,7 +42,7 @@ function isIPAllowed(clientIP: string): boolean {
     if (Date.now() < exp) return true;
     allowedIPs.delete(clientIP); // Expired, clean up
   }
-  return false; // Strictly PIN-based access only
+  return false;
 }
 
 function getClientIP(req: IncomingMessage): string {
