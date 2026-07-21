@@ -29,22 +29,10 @@ A Bun-based anonymous HTTP/HTTPS proxy server that provides secure and flexible 
 
 ## Configuration
 
-Create a `config.json` file in the root directory with the following variables. Choose proxy server port and allowed IPs to access proxy:
-
+Copy dotenv-example .env:
 ```
-{
-  "port": "8080",
-  "allowed_ips": "52.167.144.238,52.167.144.*,192.168.1.*,10.0.0.0/24" 
-}
+cp dotenv-example .env
 ```
-
-### Configuration Options
-
-- `PORT`: The port number on which the proxy server will listen (default: 32000)
-- `ALLOWED_IPS`: Comma-separated list of IP addresses or IP ranges that are allowed to use the proxy. Supports:
-  - Individual IPs: `192.168.1.100`
-  - IP wildcards: `192.168.1.*`
-  - CIDR notation: `10.0.0.0/24`
 
 ## Usage
 
