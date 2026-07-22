@@ -27,7 +27,7 @@ A Bun-based anonymous HTTP/HTTPS proxy server that provides secure and flexible 
 
 2. Clone the repository:
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/IvanDeus/deus-proxy-server-ts.git
    cd deus-proxy-server-ts
    ```
 
