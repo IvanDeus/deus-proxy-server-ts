@@ -202,19 +202,22 @@ const authServer = createServer((req, res) => {
     let body = '';
     req.on('data', chunk => { body += chunk.toString(); });
     req.on('end', () => {
-      const params = new URLSearchParams(body);
-      const pin = params.get('pin') ?? '';
-      
-      if (pin === PIN) {
-        allowedIPs.set(clientIP, Date.now() + TIMEOUT_MS);
-        log(`PIN OK — allowed ${clientIP} for ${TIMEOUT_MIN} min`);
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(successPage(clientIP));
-      } else {
-        log(`PIN FAIL from ${clientIP}`);
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(pinPage(true));
-      }
+      // 2200 ms delay to mitigate brute force and timing attacks
+      setTimeout(() => {
+        const params = new URLSearchParams(body);
+        const pin = params.get('pin') ?? '';
+        
+        if (pin === PIN) {
+          allowedIPs.set(clientIP, Date.now() + TIMEOUT_MS);
+          log(`PIN OK — allowed ${clientIP} for ${TIMEOUT_MIN} min`);
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end(successPage(clientIP));
+        } else {
+          log(`PIN FAIL from ${clientIP}`);
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end(pinPage(true));
+        }
+      }, 2200);
     });
     return;
   }
