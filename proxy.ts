@@ -24,6 +24,24 @@ const ts = () => new Date().toLocaleString("en-GB", { timeZone: "Europe/Moscow" 
 const log = (msg: string) => console.log(`[${ts()}] ${msg}`);
 const logErr = (msg: string) => console.error(`[${ts()}] [ERROR] ${msg}`);
 
+const fmtMB = (bytes: number): string => `${(bytes / 1048576).toFixed(2)} MB (${bytes} bytes)`;
+
+// Count bytes flowing through a readable stream and report them once, when the
+// stream ends or the connection drops (aborted requests still get accounted).
+function logDownload(source: Socket | IncomingMessage, describe: () => string): void {
+  let bytes = 0;
+  let reported = false;
+  const report = () => {
+    if (reported) return;
+    reported = true;
+    log(`Downloaded ${fmtMB(bytes)} for ${describe()}`);
+  };
+  source.on('data', (chunk: Buffer) => { bytes += chunk.length; });
+  source.on('end', report);
+  source.on('close', report);
+  source.on('error', report);
+}
+
 // --- Expired IP cleanup ---
 const cleanupTimer = setInterval(() => {
   const now = Date.now();
@@ -275,9 +293,12 @@ proxyServer.on('request', (clientReq: IncomingMessage, clientRes: ServerResponse
   trackConnection(clientReq.socket, `HTTP-${clientIP}`);
   trackConnection(clientRes.socket, `HTTP-RES-${clientIP}`);
 
+  const requestDesc = () => `${clientReq.method} ${clientReq.url} via ${parsedUrl.hostname} for ${clientIP}`;
+
   const proxyReq = httpRequest(options, (proxyRes: IncomingMessage) => {
     removeHopByHopHeaders(proxyRes.headers as any);
     clientRes.writeHead(proxyRes.statusCode || 500, proxyRes.headers);
+    logDownload(proxyRes, requestDesc);
     proxyRes.pipe(clientRes);
   });
 
@@ -296,6 +317,7 @@ proxyServer.on('request', (clientReq: IncomingMessage, clientRes: ServerResponse
       const fallbackReq = httpRequest(fallbackOptions, (fallbackRes: IncomingMessage) => {
         removeHopByHopHeaders(fallbackRes.headers as any);
         clientRes.writeHead(fallbackRes.statusCode || 500, fallbackRes.headers);
+        logDownload(fallbackRes, requestDesc);
         fallbackRes.pipe(clientRes);
       });
 
@@ -344,6 +366,8 @@ proxyServer.on('connect', (clientReq: IncomingMessage, clientSocket: Socket, hea
 
   trackConnection(clientSocket, `HTTPS-CLIENT-${clientIP}`);
 
+  const tunnelDesc = () => `CONNECT ${hostname}:${serverPort} for ${clientIP}`;
+
   const serverSocket = netConnect({
     host: hostname,
     port: serverPort,
@@ -351,6 +375,7 @@ proxyServer.on('connect', (clientReq: IncomingMessage, clientSocket: Socket, hea
   }, () => {
     log(`Successfully connected to ${hostname}:${serverPort} for client ${clientIP}`);
     trackConnection(serverSocket, `HTTPS-SERVER-${hostname}`);
+    logDownload(serverSocket, tunnelDesc);
 
     clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
     if (head && head.length > 0) {
@@ -372,6 +397,7 @@ proxyServer.on('connect', (clientReq: IncomingMessage, clientSocket: Socket, hea
       }, () => {
         log(`Fallback connection successful to ${hostname}`);
         trackConnection(fallbackSocket, `HTTPS-FALLBACK-${hostname}`);
+        logDownload(fallbackSocket, tunnelDesc);
 
         clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
         if (head && head.length > 0) {
