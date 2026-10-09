@@ -3,3 +3,5 @@ PORT=3500
 AUTHPORT=3510
 PIN=5555
 TIMEOUT=300
+# IANA zone for the timestamp prefix on log lines
+LOG_TZ=Europe/Moscow

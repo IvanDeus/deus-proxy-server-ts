@@ -10,6 +10,7 @@ A Bun-based anonymous HTTP/HTTPS proxy server that provides secure and flexible 
 - **Dynamic IP-based access control via PIN authentication**
 - **Built-in brute-force defense** (2200ms delay on all authentication attempts to prevent timing attacks and rate abuse)
 - Automatic IP authorization expiration and background cleanup
+- **Per-request traffic accounting** (downloaded megabytes logged for every request and tunnel)
 - Easy configuration via environment variables
 - Lightweight, fast, and IPv4/IPv6 fallback support
 - Graceful shutdown handling with active connection tracking
@@ -43,6 +44,7 @@ Edit the `.env` file to configure the server. Available variables:
 - `AUTHPORT`: Authentication web interface port (default: `32001`)
 - `PIN`: The secret PIN required to authorize an IP address (default: `0000`)
 - `TIMEOUT`: Duration in **minutes** before an authorized IP expires (default: `300`)
+- `LOG_TZ`: IANA time zone used for the timestamp prefix on log lines (default: `UTC`, e.g. `Europe/Moscow`)
 
 ## Usage
 
@@ -58,6 +60,20 @@ Edit the `.env` file to configure the server. Available variables:
 4. **Use the Proxy**: Configure your device, browser, or application to route traffic through the proxy port (e.g., `<your-server-ip>:32000`). 
 
 *(Note: Unauthorized IPs attempting to use the proxy port will receive a `403 Access denied` response.)*
+
+## Logging
+
+Everything is written to stdout/stderr, so a process manager like PM2 collects it. Each line is
+prefixed with `[day.month.year hour:minute:second]` in the zone given by `LOG_TZ`.
+
+```
+[09.10.2026 09:14:38] Proxying HTTPS request from 203.0.113.7: CONNECT example.com:443
+[09.10.2026 09:14:39] Downloaded 12.34 MB (12910848 bytes) for CONNECT example.com:443 for 203.0.113.7
+[09.10.2026 09:14:41] [ERROR] Server socket error for example.com: ECONNRESET
+```
+
+The `Downloaded` line reports what the upstream sent for one HTTP response or one CONNECT tunnel. It
+is written once the stream finishes, so an aborted transfer still logs the bytes it managed to pull.
 
 ## Production Mode with PM2
 

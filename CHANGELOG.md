@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-10-09
+
+### Added
+
+- `logger.ts` stamps every console line on its own, so `console.log`, `console.warn` and
+  `console.error` all carry a timestamp without the call site building one.
+- `LOG_TZ` environment variable selects the zone the timestamps are rendered in
+  (default `UTC`). An unknown zone name falls back to the host's own zone and says so on
+  stderr instead of refusing to start.
+
+### Changed
+
+- Timestamps read `[09.10.2026 09:14:38]` rather than `[09/10/2026, 09:14:38]`, and the zone is
+  configurable where it used to be hard-coded to `Europe/Moscow`. Set `LOG_TZ=Europe/Moscow` to
+  keep the previous behaviour.
+
 ## [1.1.0] - 2026-10-09
 
 ### Added

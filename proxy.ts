@@ -3,6 +3,7 @@ import { createServer, IncomingMessage, ServerResponse, request as httpRequest }
 import { parse as urlParse, Url } from 'url';
 import { connect as netConnect, Socket } from 'net';
 import { setDefaultResultOrder } from 'dns';
+import './logger';
 
 // Set DNS to prefer IPv4 but fall back to IPv6
 setDefaultResultOrder('ipv4first');
@@ -20,9 +21,10 @@ const activeConnections = new Set<Socket>();
 let isShuttingDown = false;
 
 // --- Logging ---
-const ts = () => new Date().toLocaleString("en-GB", { timeZone: "Europe/Moscow" });
-const log = (msg: string) => console.log(`[${ts()}] ${msg}`);
-const logErr = (msg: string) => console.error(`[${ts()}] [ERROR] ${msg}`);
+// logger.ts patches the console to prefix every line with a timestamp, so these
+// add no stamp of their own.
+const log = (msg: string) => console.log(msg);
+const logErr = (msg: string) => console.error(`[ERROR] ${msg}`);
 
 const fmtMB = (bytes: number): string => `${(bytes / 1048576).toFixed(2)} MB (${bytes} bytes)`;
 

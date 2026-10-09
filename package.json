@@ -1,6 +1,6 @@
 {
   "name": "deus-proxy-server",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Anonymous HTTP/HTTPS proxy with dynamic PIN-based IP access control",
   "private": true,
   "scripts": {
