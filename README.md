@@ -69,7 +69,7 @@ Edit the `.env` file to configure the server. Available variables:
    - Expiration time (Moscow timezone)
    - Countdown timer until access expires
 
-6. **Use the Proxy**: Configure your device, browser, or application to route traffic through the proxy port (e.g., `<your-server-ip>:32000`). 
+6. **Use the Proxy**: Configure your device, browser, or application to route traffic through the proxy port (e.g., `<your-server-ip>:3500`). 
 
 *(Note: Unauthorized IPs attempting to use the proxy port will receive a `403 Access denied` response.)*
 
