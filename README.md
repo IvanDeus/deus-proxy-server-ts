@@ -62,7 +62,7 @@ Edit the `.env` file to configure the server. Available variables:
 
 3. Click **"📱 Get PIN via Telegram"** button. You'll receive a 5-digit PIN in your Telegram channel within seconds. The PIN input field will appear below the button (with 2-second cooldown protection).
 
-4. **Enter the PIN** in the field that appears below the button (with 5 dots placeholder: • • • •). The PIN auto-submits when you enter all 5 digits - no extra button needed. It's valid for **2 minutes** and will be consumed after successful use.
+4. **Enter the PIN** in the field that appears below the button (with dots placeholder: • • • •). The PIN auto-submits when you enter all 5 digits - no extra button needed. It's valid for **2 minutes** and will be consumed after successful use.
 
 5. Upon successful authentication, you'll see a confirmation page showing:
    - Your authorized IP address
