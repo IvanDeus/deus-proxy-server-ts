@@ -9,6 +9,7 @@ A Bun-based anonymous HTTP/HTTPS proxy server that provides secure and flexible 
 - Anonymous proxy functionality
 - **Dynamic 5-digit PINs delivered via Telegram Bot** (2-minute validity, single-use)
 - **Built-in brute-force defense** (2200ms delay on all authentication attempts to prevent timing attacks and rate abuse)
+- **2-second cooldown on Get PIN button** to prevent DOS attacks
 - Automatic IP authorization expiration and background cleanup
 - **Per-request traffic accounting** (downloaded megabytes logged for every request and tunnel)
 - **Client IP displayed from the start** of the auth page
@@ -59,9 +60,9 @@ Edit the `.env` file to configure the server. Available variables:
 
 2. **Get your PIN**: Open your browser and navigate to the authentication port (e.g., `http://<your-server-ip>:32001`). Your current IP address is displayed at the top.
 
-3. Click **"📱 Get PIN via Telegram"** button. You'll receive a 5-digit PIN in your Telegram channel within seconds. The PIN input field will appear below the button.
+3. Click **"📱 Get PIN via Telegram"** button. You'll receive a 5-digit PIN in your Telegram channel within seconds. The PIN input field will appear below the button (with 2-second cooldown protection).
 
-4. **Enter the PIN** in the field that appears below the button (with 5 dots placeholder: • • • •). The PIN is valid for **2 minutes** and will be consumed after successful use.
+4. **Enter the PIN** in the field that appears below the button (with 5 dots placeholder: • • • •). The PIN auto-submits when you enter all 5 digits - no extra button needed. It's valid for **2 minutes** and will be consumed after successful use.
 
 5. Upon successful authentication, you'll see a confirmation page showing:
    - Your authorized IP address
@@ -125,6 +126,42 @@ pm2 startup
 # Monitor resource usage and logs in real-time
 pm2 monit
 ```
+
+## Publishing Auth Panel via Nginx
+
+To expose the authentication web interface (default port 33010) publicly using nginx:
+
+1. Create an nginx server block configuration:
+   ```nginx
+   server {
+       listen 80;
+       server_name your-auth-domain.com;
+       
+       location / {
+           proxy_pass http://localhost:33010;
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+           proxy_set_header X-Forwarded-Proto $scheme;
+           
+           # Timeout settings for PIN delivery
+           proxy_connect_timeout 60s;
+           proxy_send_timeout 60s;
+           proxy_read_timeout 60s;
+       }
+   }
+   ```
+
+2. Reload nginx configuration:
+   ```bash
+   sudo nginx -t
+   sudo systemctl reload nginx
+   ```
+
+**Security Notes:**
+- Use HTTPS with Let's Encrypt in production
+- Consider adding rate limiting to prevent abuse
+- The auth panel requires no additional authentication - protect it via nginx basic auth or IP whitelisting if needed
 
 ---
 2026 [ ivan deus ]

@@ -228,7 +228,6 @@ button:disabled{background:#475569;cursor:not-allowed}
 <form method="POST" action="/auth" id="authForm" style="display:none;margin-top:1.5rem">
 <input type="password" name="pin" inputmode="numeric" pattern="[0-9]*"
 autocomplete="off" maxlength="5" placeholder="• • • •" ${error ? 'class="shake"' : ""}>
-<button type="submit">Unlock</button>
 </form>
 <div class="err">${error ? "Invalid PIN. Try again." : ""}</div>
 <div class="hint">PIN valid for 2 minutes • expires after use</div>
@@ -277,6 +276,17 @@ if (pinInput) {
     }
   });
 }
+
+// Add 2-second cooldown on Get PIN button to prevent DOS
+const originalGetPin = getPin;
+let pinCooldown = false;
+getPin = async () => {
+  if (pinCooldown) return;
+  pinCooldown = true;
+  await new Promise(resolve => setTimeout(resolve, 2000));
+  pinCooldown = false;
+  return originalGetPin();
+};
 </script>`;
 }
 

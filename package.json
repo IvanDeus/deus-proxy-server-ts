@@ -1,6 +1,6 @@
 {
   "name": "deus-proxy-server",
-  "version": "1.3.2",
+  "version": "1.4.0",
   "description": "Anonymous HTTP/HTTPS proxy with Telegram Bot-based temporary PIN access control",
   "private": true,
   "scripts": {
