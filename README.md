@@ -42,8 +42,8 @@ cp dotenv-example .env
 ```
 
 Edit the `.env` file to configure the server. Available variables:
-- `PORT`: Proxy server port (default: `32000`)
-- `AUTHPORT`: Authentication web interface port (default: `32001`)
+- `PORT`: Proxy server port (default: `3500`)
+- `AUTHPORT`: Authentication web interface port (default: `3510`)
 - `TELEGRAM_BOT_TOKEN`: Your Telegram Bot API token (required)
 - `CHANNEL_ID`: Telegram channel ID where PINs will be sent (required)
 - `TIMEOUT`: Duration in **minutes** before an authorized IP expires (default: `300`)
