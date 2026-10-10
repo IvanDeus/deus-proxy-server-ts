@@ -134,9 +134,12 @@ To expose the authentication web interface (default port 3510) publicly using ng
 1. Create an nginx server block configuration:
    ```nginx
    server {
-       listen 80;
        server_name your-auth-domain.com;
-       
+       listen 443 ssl http2;
+
+       ssl_certificate     /etc/letsencrypt/live/fullchain.pem;
+       ssl_certificate_key /etc/letsencrypt/live/privkey.pem 
+    
        location / {
            proxy_pass http://localhost:3510;
            proxy_set_header Host $host;
