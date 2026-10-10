@@ -190,7 +190,7 @@ function msToHuman(ms: number): string {
   return h > 0 ? `${h}h ${m % 60}m` : `${m}m`;
 }
 
-function pinPage(error = false): string {
+function pinPage(error = false, clientIP = 'unknown'): string {
   return `<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8">
@@ -204,9 +204,9 @@ min-height:100dvh;padding:1rem}
 .card{background:#1e293b;border-radius:1rem;padding:2.5rem 2rem;width:100%;max-width:340px;
 text-align:center;box-shadow:0 25px 50px -12px rgba(0,0,0,.5)}
 h1{font-size:1.4rem;margin-bottom:.5rem}
-p.sub{font-size:.85rem;color:#94a3b8;margin-bottom:1.5rem}
-input[type=password]{width:100%;padding:.9rem 1rem;font-size:1.5rem;text-align:center;
-letter-spacing:.6em;border:2px solid #334155;border-radius:.6rem;background:#0f172a;
+.subip{font-size:.75rem;color:#64748b;font-family:"SF Mono",Menlo,monospace;margin-bottom:1.5rem}
+input[type=password]{width:100%;padding:.9rem 1rem;font-size:1.2rem;text-align:center;
+letter-spacing:.25em;border:2px solid #334155;border-radius:.6rem;background:#0f172a;
 color:#f1f5f9;outline:none;transition:border-color .2s}
 input:focus{border-color:#3b82f6}
 input.shake{animation:shake .4s}
@@ -221,12 +221,13 @@ button:disabled{background:#475569;cursor:not-allowed}
 </style></head><body>
 <div class="card">
 <h1>🔐 Proxy Access</h1>
+<p class="subip">From: ${clientIP}</p>
 <p class="sub">Get PIN from Telegram to authorize your IP</p>
 <button id="getPinBtn" onclick="getPin()">📱 Get PIN via Telegram</button>
 <div id="pinStatus"></div>
 <form method="POST" action="/auth" id="authForm" style="display:none;margin-top:1.5rem">
 <input type="password" name="pin" inputmode="numeric" pattern="[0-9]*"
-autocomplete="off" maxlength="5" placeholder="••••" ${error ? 'class="shake"' : ""}>
+autocomplete="off" maxlength="5" placeholder="• • • •" ${error ? 'class="shake"' : ""}>
 <button type="submit">Unlock</button>
 </form>
 <div class="err">${error ? "Invalid PIN. Try again." : ""}</div>
@@ -336,7 +337,7 @@ const authServer = createServer((req, res) => {
   
   if (req.method === 'GET' && req.url === '/') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(pinPage());
+    res.end(pinPage(false, clientIP));
     return;
   }
   
@@ -370,6 +371,14 @@ const authServer = createServer((req, res) => {
     return;
   }
 
+  if (req.method === 'GET' && req.url?.startsWith('/success')) {
+    const urlParams = new URLSearchParams(req.url.split('?')[1]);
+    const ip = urlParams.get('ip') || clientIP;
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(successPage(ip));
+    return;
+  }
+
   if (req.method === 'POST' && req.url === '/auth') {
     let body = '';
     req.on('data', chunk => { body += chunk.toString(); });
@@ -388,17 +397,17 @@ const authServer = createServer((req, res) => {
             allowedIPs.set(clientIP, Date.now() + TIMEOUT_MS);
             activePINs.delete(pin); // Consume PIN after successful use
             log(`PIN OK — allowed ${clientIP} for ${TIMEOUT_MIN} min`);
-            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-            res.end(successPage(clientIP));
+            res.writeHead(302, { 'Location': `/success?ip=${encodeURIComponent(clientIP)}` });
+            res.end();
             return;
           } else {
-            activePINs.delete(pin); // Expired or wrong IP - remove it
+            activePINs.delete(pin); // Expired or already used - remove it
           }
         }
         
         log(`PIN FAIL from ${clientIP}`);
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(pinPage(true));
+        res.end(pinPage(false, clientIP)); // Reset form without shake
       }, 2200);
     });
     return;

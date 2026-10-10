@@ -11,6 +11,7 @@ A Bun-based anonymous HTTP/HTTPS proxy server that provides secure and flexible 
 - **Built-in brute-force defense** (2200ms delay on all authentication attempts to prevent timing attacks and rate abuse)
 - Automatic IP authorization expiration and background cleanup
 - **Per-request traffic accounting** (downloaded megabytes logged for every request and tunnel)
+- **Client IP displayed from the start** of the auth page
 - Easy configuration via environment variables
 - Lightweight, fast, and IPv4/IPv6 fallback support
 - Graceful shutdown handling with active connection tracking
@@ -56,13 +57,18 @@ Edit the `.env` file to configure the server. Available variables:
    bun run proxy.ts
    ```
 
-2. **Get your PIN**: Open your browser and navigate to the authentication port (e.g., `http://<your-server-ip>:32001`).
+2. **Get your PIN**: Open your browser and navigate to the authentication port (e.g., `http://<your-server-ip>:32001`). Your current IP address is displayed at the top.
 
 3. Click **"📱 Get PIN via Telegram"** button. You'll receive a 5-digit PIN in your Telegram channel within seconds. The PIN input field will appear below the button.
 
-4. **Enter the PIN** in the field that appears below the button. The PIN is valid for **2 minutes** and will be consumed after successful use.
+4. **Enter the PIN** in the field that appears below the button (with 5 dots placeholder: • • • •). The PIN is valid for **2 minutes** and will be consumed after successful use.
 
-5. **Use the Proxy**: Configure your device, browser, or application to route traffic through the proxy port (e.g., `<your-server-ip>:32000`). 
+5. Upon successful authentication, you'll see a confirmation page showing:
+   - Your authorized IP address
+   - Expiration time (Moscow timezone)
+   - Countdown timer until access expires
+
+6. **Use the Proxy**: Configure your device, browser, or application to route traffic through the proxy port (e.g., `<your-server-ip>:32000`). 
 
 *(Note: Unauthorized IPs attempting to use the proxy port will receive a `403 Access denied` response.)*
 
