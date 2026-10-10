@@ -145,9 +145,9 @@ To expose the authentication web interface (default port 3510) publicly using ng
            proxy_set_header X-Forwarded-Proto $scheme;
            
            # Timeout settings for PIN delivery
-           proxy_connect_timeout 60s;
-           proxy_send_timeout 60s;
-           proxy_read_timeout 60s;
+           proxy_connect_timeout 40s;
+           proxy_send_timeout 40s;
+           proxy_read_timeout 40s;
        }
    }
    ```
