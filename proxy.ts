@@ -23,6 +23,27 @@ if (!TELEGRAM_BOT_TOKEN || !CHANNEL_ID) {
   process.exit(1);
 }
 
+// Test Telegram API connectivity at startup
+async function testTelegramConnectivity(): Promise<boolean> {
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe`, {
+      method: 'GET',
+      timeout: 5000 // 5 second timeout
+    });
+    
+    if (response.ok) {
+      log("✅ Telegram Bot API is reachable");
+      return true;
+    } else {
+      logErr(`⚠️ Telegram Bot API returned ${response.status}`);
+      return false;
+    }
+  } catch (error) {
+    logErr(`⚠️ Cannot reach api.telegram.org - ${(error as Error).message}. PIN delivery will fail until network is fixed.`);
+    return false;
+  }
+}
+
 // --- State ---
 const allowedIPs = new Map<string, number>();
 const activePINs = new Map<string, { ip: string; expiresAt: number }>();
@@ -573,15 +594,25 @@ proxyServer.on('error', (err: Error) => {
 });
 
 // --- Startup ---
-authServer.listen(AUTHPORT, () => {
-  log(`Auth server running on port ${AUTHPORT}`);
-});
+async function startServers(): Promise<void> {
+  authServer.listen(AUTHPORT, () => {
+    log(`Auth server running on port ${AUTHPORT}`);
+    
+    proxyServer.listen(PORT, () => {
+      log(`Proxy server running on port ${PORT}`);
+      log('Supports both HTTP and HTTPS traffic');
+      log('Using IPv4 preference with IPv6 fallback');
+      log('Strict PIN authentication required for all proxy access');
+    });
+  });
+  
+  // Test Telegram connectivity
+  await testTelegramConnectivity();
+}
 
-proxyServer.listen(PORT, () => {
-  log(`Proxy server running on port ${PORT}`);
-  log('Supports both HTTP and HTTPS traffic');
-  log('Using IPv4 preference with IPv6 fallback');
-  log('Strict PIN authentication required for all proxy access');
+startServers().catch(err => {
+  logErr(`Failed to start servers: ${err.message}`);
+  process.exit(1);
 });
 
 // --- Graceful Shutdown ---
