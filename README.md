@@ -129,7 +129,7 @@ pm2 monit
 
 ## Publishing Auth Panel via Nginx
 
-To expose the authentication web interface (default port 33010) publicly using nginx:
+To expose the authentication web interface (default port 3510) publicly using nginx:
 
 1. Create an nginx server block configuration:
    ```nginx
@@ -138,7 +138,7 @@ To expose the authentication web interface (default port 33010) publicly using n
        server_name your-auth-domain.com;
        
        location / {
-           proxy_pass http://localhost:33010;
+           proxy_pass http://localhost:3510;
            proxy_set_header Host $host;
            proxy_set_header X-Real-IP $remote_addr;
            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
