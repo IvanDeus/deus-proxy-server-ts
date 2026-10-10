@@ -58,9 +58,9 @@ Edit the `.env` file to configure the server. Available variables:
 
 2. **Get your PIN**: Open your browser and navigate to the authentication port (e.g., `http://<your-server-ip>:32001`).
 
-3. Click **"📱 Get PIN via Telegram"** button. You'll receive a 5-digit PIN in your Telegram channel within seconds.
+3. Click **"📱 Get PIN via Telegram"** button. You'll receive a 5-digit PIN in your Telegram channel within seconds. The PIN input field will appear below the button.
 
-4. **Enter the PIN** on the auth page. The PIN is valid for **2 minutes** and will be consumed after successful use.
+4. **Enter the PIN** in the field that appears below the button. The PIN is valid for **2 minutes** and will be consumed after successful use.
 
 5. **Use the Proxy**: Configure your device, browser, or application to route traffic through the proxy port (e.g., `<your-server-ip>:32000`). 
 

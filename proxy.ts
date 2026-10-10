@@ -221,12 +221,12 @@ button:disabled{background:#475569;cursor:not-allowed}
 </style></head><body>
 <div class="card">
 <h1>🔐 Proxy Access</h1>
-<p class="sub">Enter PIN to authorize your IP</p>
+<p class="sub">Get PIN from Telegram to authorize your IP</p>
 <button id="getPinBtn" onclick="getPin()">📱 Get PIN via Telegram</button>
 <div id="pinStatus"></div>
-<form method="POST" action="/auth">
+<form method="POST" action="/auth" id="authForm" style="display:none;margin-top:1.5rem">
 <input type="password" name="pin" inputmode="numeric" pattern="[0-9]*"
-autocomplete="off" maxlength="5" placeholder="••••" ${error ? 'class="shake"' : ""} autofocus>
+autocomplete="off" maxlength="5" placeholder="••••" ${error ? 'class="shake"' : ""}>
 <button type="submit">Unlock</button>
 </form>
 <div class="err">${error ? "Invalid PIN. Try again." : ""}</div>
@@ -236,16 +236,25 @@ autocomplete="off" maxlength="5" placeholder="••••" ${error ? 'class="sh
 async function getPin() {
   const btn = document.getElementById('getPinBtn');
   const status = document.getElementById('pinStatus');
+  const form = document.getElementById('authForm');
   
   btn.disabled = true;
   btn.textContent = 'Sending...';
   status.innerHTML = '';
+  form.style.display = 'none';
   
   try {
     const response = await fetch('/get-pin', { method: 'POST' });
     if (response.ok) {
       status.innerHTML = '<div class="status">✅ PIN sent! Check your Telegram channel.</div>';
       btn.style.display = 'none';
+      form.style.display = 'block';
+      
+      // Focus on PIN input after showing it
+      setTimeout(() => {
+        const pinInput = form.querySelector('input[name="pin"]');
+        if (pinInput) pinInput.focus();
+      }, 100);
     } else {
       status.innerHTML = '<div style="color:#f87171;">❌ Failed to send PIN. Please try again.</div>';
       btn.disabled = false;
