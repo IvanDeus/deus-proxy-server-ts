@@ -215,7 +215,7 @@ button{width:100%;margin-top:1.2rem;padding:.9rem;font-size:1.05rem;font-weight:
 border-radius:.6rem;cursor:pointer;background:#3b82f6;color:#fff;transition:background .2s}
 button:active{background:#2563eb}
 button:disabled{background:#475569;cursor:not-allowed}
-.err{color:#f87171;font-size:.85rem;margin-top:.8rem;min-height:1.2em}
+.err{color:#f87171;font-size:.85rem;margin-top:.8rem;min-height:1.2em;font-weight:500}
 .status{color:#4ade80;font-size:.9rem;margin-top:1rem;padding:1rem;background:#0f172a;border-radius:.5rem}
 .hint{font-size:.75rem;color:#64748b;margin-top:1.2rem}
 </style></head><body>
@@ -229,7 +229,7 @@ button:disabled{background:#475569;cursor:not-allowed}
 <input type="password" name="pin" inputmode="numeric" pattern="[0-9]*"
 autocomplete="off" maxlength="5" placeholder="• • • •" ${error ? 'class="shake"' : ""}>
 </form>
-<div class="err">${error ? "Invalid PIN. Try again." : ""}</div>
+<div class="err">${error ? "Invalid or expired PIN. Please try again." : ""}</div>
 <div class="hint">PIN valid for 2 minutes • expires after use</div>
 </div></body>
 <script>
@@ -417,7 +417,7 @@ const authServer = createServer((req, res) => {
         
         log(`PIN FAIL from ${clientIP}`);
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(pinPage(false, clientIP)); // Reset form without shake
+        res.end(pinPage(true, clientIP)); // FIXED: Show error feedback with shake animation
       }, 2200);
     });
     return;
