@@ -11,12 +11,21 @@ setDefaultResultOrder('ipv4first');
 // --- Config ---
 const PORT = parseInt(Bun.env.PORT ?? "32000", 10);
 const AUTHPORT = parseInt(Bun.env.AUTHPORT ?? "32001", 10);
-const PIN = Bun.env.PIN ?? "0000";
+const TELEGRAM_BOT_TOKEN = Bun.env.TELEGRAM_BOT_TOKEN;
+const CHANNEL_ID = Bun.env.CHANNEL_ID;
+const PIN_TIMEOUT_MIN = 2; // 2 minutes for dynamic PINs
 const TIMEOUT_MIN = parseInt(Bun.env.TIMEOUT ?? "300", 10);
 const TIMEOUT_MS = TIMEOUT_MIN * 60000;
 
+// Validate Telegram credentials on startup
+if (!TELEGRAM_BOT_TOKEN || !CHANNEL_ID) {
+  console.error("❌ TELEGRAM_BOT_TOKEN and CHANNEL_ID environment variables are required");
+  process.exit(1);
+}
+
 // --- State ---
 const allowedIPs = new Map<string, number>();
+const activePINs = new Map<string, { ip: string; expiresAt: number }>();
 const activeConnections = new Set<Socket>();
 let isShuttingDown = false;
 
@@ -27,6 +36,38 @@ const log = (msg: string) => console.log(msg);
 const logErr = (msg: string) => console.error(`[ERROR] ${msg}`);
 
 const fmtMB = (bytes: number): string => `${(bytes / 1048576).toFixed(2)} MB (${bytes} bytes)`;
+
+// Generate a random 5-digit PIN
+function generatePIN(): string {
+  return Math.floor(10000 + Math.random() * 90000).toString();
+}
+
+// Send PIN via Telegram Bot API
+async function sendPINToTelegram(pin: string, clientIP: string): Promise<boolean> {
+  const message = `🔐 New Proxy Access PIN\n📍 Requested from IP: ${clientIP}\n⏰ Valid for 2 minutes\n\nYour PIN: **${pin}**`;
+  
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: CHANNEL_ID,
+        text: message,
+        parse_mode: 'Markdown'
+      })
+    });
+    
+    if (!response.ok) {
+      console.error(`Failed to send PIN via Telegram: ${response.status}`);
+      return false;
+    }
+    
+    return true;
+  } catch (error) {
+    console.error(`Error sending PIN via Telegram: ${error}`);
+    return false;
+  }
+}
 
 // Count bytes flowing through a readable stream and report them once, when the
 // stream ends or the connection drops (aborted requests still get accounted).
@@ -47,6 +88,16 @@ function logDownload(source: Socket | IncomingMessage, describe: () => string): 
 // --- Expired IP cleanup ---
 const cleanupTimer = setInterval(() => {
   const now = Date.now();
+  
+  // Clean up expired PINs
+  for (const [pin, data] of activePINs) {
+    if (now >= data.expiresAt) {
+      activePINs.delete(pin);
+      log(`PIN expired: ${pin}`);
+    }
+  }
+  
+  // Clean up expired IPs
   for (const [ip, exp] of allowedIPs) {
     if (now >= exp) {
       allowedIPs.delete(ip);
@@ -141,20 +192,60 @@ input.shake{animation:shake .4s}
 button{width:100%;margin-top:1.2rem;padding:.9rem;font-size:1.05rem;font-weight:600;border:none;
 border-radius:.6rem;cursor:pointer;background:#3b82f6;color:#fff;transition:background .2s}
 button:active{background:#2563eb}
+button:disabled{background:#475569;cursor:not-allowed}
 .err{color:#f87171;font-size:.85rem;margin-top:.8rem;min-height:1.2em}
+.status{color:#4ade80;font-size:.9rem;margin-top:1rem;padding:1rem;background:#0f172a;border-radius:.5rem}
 .hint{font-size:.75rem;color:#64748b;margin-top:1.2rem}
 </style></head><body>
 <div class="card">
 <h1>🔐 Proxy Access</h1>
 <p class="sub">Enter PIN to authorize your IP</p>
+<button id="getPinBtn" onclick="getPin()">📱 Get PIN via Telegram</button>
+<div id="pinStatus"></div>
 <form method="POST" action="/auth">
 <input type="password" name="pin" inputmode="numeric" pattern="[0-9]*"
-autocomplete="off" maxlength="16" placeholder="••••" ${error ? 'class="shake"' : ""} autofocus>
+autocomplete="off" maxlength="5" placeholder="••••" ${error ? 'class="shake"' : ""} autofocus>
 <button type="submit">Unlock</button>
 </form>
 <div class="err">${error ? "Invalid PIN. Try again." : ""}</div>
-<div class="hint">Access expires after ${TIMEOUT_MIN} min</div>
-</div></body></html>`;
+<div class="hint">PIN valid for 2 minutes • expires after use</div>
+</div></body>
+<script>
+async function getPin() {
+  const btn = document.getElementById('getPinBtn');
+  const status = document.getElementById('pinStatus');
+  
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+  status.innerHTML = '';
+  
+  try {
+    const response = await fetch('/get-pin', { method: 'POST' });
+    if (response.ok) {
+      status.innerHTML = '<div class="status">✅ PIN sent! Check your Telegram channel.</div>';
+      btn.style.display = 'none';
+    } else {
+      status.innerHTML = '<div style="color:#f87171;">❌ Failed to send PIN. Please try again.</div>';
+      btn.disabled = false;
+      btn.textContent = '📱 Get PIN via Telegram';
+    }
+  } catch (err) {
+    status.innerHTML = '<div style="color:#f87171;">❌ Network error. Please try again.</div>';
+    btn.disabled = false;
+    btn.textContent = '📱 Get PIN via Telegram';
+  }
+}
+
+// Auto-submit when 5 digits are entered
+const pinInput = document.querySelector('input[name="pin"]');
+if (pinInput) {
+  pinInput.addEventListener('input', (e) => {
+    if (e.target.value.length === 5) {
+      e.target.closest('form').submit();
+    }
+  });
+}
+</script>`;
 }
 
 function successPage(ip: string): string {
@@ -217,6 +308,29 @@ const authServer = createServer((req, res) => {
     res.end(pinPage());
     return;
   }
+  
+  // New: Get PIN via Telegram endpoint
+  if (req.method === 'POST' && req.url === '/get-pin') {
+    const pin = generatePIN();
+    const expiresAt = Date.now() + PIN_TIMEOUT_MIN * 60 * 1000;
+    
+    activePINs.set(pin, { ip: clientIP, expiresAt });
+    
+    log(`Generated new PIN ${pin.substring(0, 3)}... for ${clientIP}, expires in ${PIN_TIMEOUT_MIN} min`);
+    
+    sendPINToTelegram(pin, clientIP).then(success => {
+      if (success) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true }));
+      } else {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: 'Failed to send PIN via Telegram' }));
+        activePINs.delete(pin); // Remove failed PIN
+      }
+    });
+    
+    return;
+  }
 
   if (req.method === 'POST' && req.url === '/auth') {
     let body = '';
@@ -227,16 +341,26 @@ const authServer = createServer((req, res) => {
         const params = new URLSearchParams(body);
         const pin = params.get('pin') ?? '';
         
-        if (pin === PIN) {
-          allowedIPs.set(clientIP, Date.now() + TIMEOUT_MS);
-          log(`PIN OK — allowed ${clientIP} for ${TIMEOUT_MIN} min`);
-          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-          res.end(successPage(clientIP));
-        } else {
-          log(`PIN FAIL from ${clientIP}`);
-          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-          res.end(pinPage(true));
+        // Check if PIN exists and is valid
+        if (activePINs.has(pin)) {
+          const record = activePINs.get(pin);
+          
+          // Verify PIN hasn't expired and IP matches
+          if (record && Date.now() < record.expiresAt && record.ip === clientIP) {
+            allowedIPs.set(clientIP, Date.now() + TIMEOUT_MS);
+            activePINs.delete(pin); // Consume PIN after successful use
+            log(`PIN OK — allowed ${clientIP} for ${TIMEOUT_MIN} min`);
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.end(successPage(clientIP));
+            return;
+          } else {
+            activePINs.delete(pin); // Expired or wrong IP - remove it
+          }
         }
+        
+        log(`PIN FAIL from ${clientIP}`);
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(pinPage(true));
       }, 2200);
     });
     return;

@@ -1,7 +1,8 @@
 # .env
 PORT=3500
 AUTHPORT=3510
-PIN=5555
+TELEGRAM_BOT_TOKEN=your_bot_token_here
+CHANNEL_ID=-100xxxxxxxxx
 TIMEOUT=300
 # IANA zone for the timestamp prefix on log lines
 LOG_TZ=Europe/Moscow

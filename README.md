@@ -1,13 +1,13 @@
 # deus proxy server
 
-A Bun-based anonymous HTTP/HTTPS proxy server that provides secure and flexible proxy capabilities with dynamic PIN-based IP access control and built-in brute-force protection.
+A Bun-based anonymous HTTP/HTTPS proxy server that provides secure and flexible proxy capabilities with **Telegram Bot-based temporary PIN access control** and built-in brute-force protection.
 
 ## Features
 
 - Supports both HTTP and HTTPS traffic (CONNECT tunneling)
 - No traffic decryption (end-to-end encryption preserved for HTTPS)
 - Anonymous proxy functionality
-- **Dynamic IP-based access control via PIN authentication**
+- **Dynamic 5-digit PINs delivered via Telegram Bot** (2-minute validity, single-use)
 - **Built-in brute-force defense** (2200ms delay on all authentication attempts to prevent timing attacks and rate abuse)
 - Automatic IP authorization expiration and background cleanup
 - **Per-request traffic accounting** (downloaded megabytes logged for every request and tunnel)
@@ -42,9 +42,12 @@ cp dotenv-example .env
 Edit the `.env` file to configure the server. Available variables:
 - `PORT`: Proxy server port (default: `32000`)
 - `AUTHPORT`: Authentication web interface port (default: `32001`)
-- `PIN`: The secret PIN required to authorize an IP address (default: `0000`)
+- `TELEGRAM_BOT_TOKEN`: Your Telegram Bot API token (required)
+- `CHANNEL_ID`: Telegram channel ID where PINs will be sent (required)
 - `TIMEOUT`: Duration in **minutes** before an authorized IP expires (default: `300`)
 - `LOG_TZ`: IANA time zone used for the timestamp prefix on log lines (default: `UTC`, e.g. `Europe/Moscow`)
+
+**Important**: You must set up a Telegram Bot and get its token from [@BotFather](https://t.me/botfather). The bot must be added as an administrator to the channel where you want to receive PINs.
 
 ## Usage
 
@@ -53,11 +56,13 @@ Edit the `.env` file to configure the server. Available variables:
    bun run proxy.ts
    ```
 
-2. **Authorize your IP**: Open your browser and navigate to the authentication port (e.g., `http://<your-server-ip>:32001`).
+2. **Get your PIN**: Open your browser and navigate to the authentication port (e.g., `http://<your-server-ip>:32001`).
 
-3. Enter the configured `PIN`. Upon success, your current IP address will be whitelisted for the duration specified in `TIMEOUT`.
+3. Click **"📱 Get PIN via Telegram"** button. You'll receive a 5-digit PIN in your Telegram channel within seconds.
 
-4. **Use the Proxy**: Configure your device, browser, or application to route traffic through the proxy port (e.g., `<your-server-ip>:32000`). 
+4. **Enter the PIN** on the auth page. The PIN is valid for **2 minutes** and will be consumed after successful use.
+
+5. **Use the Proxy**: Configure your device, browser, or application to route traffic through the proxy port (e.g., `<your-server-ip>:32000`). 
 
 *(Note: Unauthorized IPs attempting to use the proxy port will receive a `403 Access denied` response.)*
 
