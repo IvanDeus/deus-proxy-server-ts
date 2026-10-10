@@ -58,13 +58,14 @@ async function sendPINToTelegram(pin: string, clientIP: string): Promise<boolean
     });
     
     if (!response.ok) {
-      console.error(`Failed to send PIN via Telegram: ${response.status}`);
+      const errorText = await response.text();
+      logErr(`Telegram API error ${response.status}: ${errorText.substring(0, 100)}`);
       return false;
     }
     
     return true;
   } catch (error) {
-    console.error(`Error sending PIN via Telegram: ${error}`);
+    logErr(`Telegram fetch failed: ${(error as Error).message}`);
     return false;
   }
 }
@@ -320,13 +321,20 @@ const authServer = createServer((req, res) => {
     
     sendPINToTelegram(pin, clientIP).then(success => {
       if (success) {
+        log(`✅ PIN sent successfully to Telegram for ${clientIP}`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true }));
       } else {
+        logErr(`❌ Failed to send PIN to Telegram for ${clientIP}`);
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: false, error: 'Failed to send PIN via Telegram' }));
         activePINs.delete(pin); // Remove failed PIN
       }
+    }).catch(err => {
+      logErr(`⚠️ Unexpected error in sendPINToTelegram: ${(err as Error).message}`);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: 'Unexpected error sending PIN' }));
+      activePINs.delete(pin);
     });
     
     return;
