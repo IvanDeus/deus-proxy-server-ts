@@ -58,7 +58,7 @@ Edit the `.env` file to configure the server. Available variables:
    bun run proxy.ts
    ```
 
-2. **Get your PIN**: Open your browser and navigate to the authentication port (e.g., `http://<your-server-ip>:32001`). Your current IP address is displayed at the top.
+2. **Get your PIN**: Open your browser and navigate to the authentication port (e.g., `http://<your-server-ip>:3510`). Your current IP address is displayed at the top.
 
 3. Click **"📱 Get PIN via Telegram"** button. You'll receive a 5-digit PIN in your Telegram channel within seconds. The PIN input field will appear below the button (with 2-second cooldown protection).
 
